@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BioTreat 加药审批</title><link rel="stylesheet" href="/assets/app.css"></head>
+<body>
+<header><div class="brand">BioTreat 工艺联控</div><nav><a href="/process">工艺总控</a><a href="/dosing" aria-current="page">加药审批</a><a href="/aeration">曝气调节</a><a href="/sludge">污泥回流</a><a href="/alarms">异常处置</a></nav></header>
+<main>
+  <div class="page-head"><div><h1>加药剂量变更</h1><div class="muted">普通范围一键下发；高风险变更（相对变化 &gt; 20% 或设定值 &gt; 500）需审核，未批准不进设备总线</div></div><div class="status"><span class="dot"></span><span id="health">checking</span></div></div>
+  <div class="grid">
+    <section class="panel"><h2>提交剂量变更</h2><form id="submit">
+      <label>处理线<select name="line" id="line"><option>line-1</option><option>line-2</option><option>line-3</option></select></label>
+      <label>关联批次<input name="batch" id="batch" readonly placeholder="选择处理线后自动带出活动批次"></label>
+      <label>药剂<input name="chemical" value="pac" required></label>
+      <label>当前值 (L/h)<input name="old" id="old" readonly value="0"></label>
+      <label>新设定值 (L/h)<input name="rate" type="number" value="100" min="0.01" step="0.01" required></label>
+      <label>变更原因（高风险必填）<input name="reason" value=""></label>
+      <label>申请人<input name="requester" value="operator"></label>
+      <button>提交变更</button>
+    </form></section>
+    <section class="panel wide"><h2>待审核申请</h2><div id="pending" class="rows">加载中</div>
+      <form id="review" style="margin-top:10px"><label>审核人<input name="reviewer" value="supervisor"></label><label>审核意见<input name="note" value="checked with lab trend"></label></form>
+    </section>
+    <section class="panel wide"><h2>已批准与历史</h2><table><thead><tr><th>药剂</th><th>批次</th><th>旧值</th><th>新值</th><th>风险</th><th>状态</th><th>申请人/审核人</th><th>操作</th></tr></thead><tbody id="history"></tbody></table></section>
+    <section class="panel wide"><h2>最近操作 / 安全补偿命令</h2><pre id="output">等待操作</pre></section>
+  </div>
+</main>
+<script src="/assets/common.js"></script><script>
+const statusText={pending_approval:'待审核',approved:'已批准',rejected:'已驳回',canceled:'已撤回',revoked:'已撤销'};
+const fmt=n=>Number(n||0).toFixed(2);
+async function loadLines(){
+  const data=await request('/api/process-lines');
+  const select=document.querySelector('#line');
+  select.innerHTML=data.lines.map(x=>`<option${x.batch_id?'':' disabled'}>${x.line_id}${x.batch_id?'':'（无活动批次）'}</option>`).join('');
+  await loadLine();
+}
+async function loadLine(){
+  const line=document.querySelector('#line').value;
+  const lines=(await request('/api/process-lines')).lines;
+  const meta=lines.find(x=>x.line_id===line)||{};
+  document.querySelector('#batch').value=meta.batch_id||'';
+  const chemical=document.querySelector('[name=chemical]').value;
+  let current=[];
+  try{const s=await request(`/api/process-lines/${line}`);current=s.dose_current||[];document._status=s;}catch{document._status=null;}
+  const cur=current.find(c=>c.chemical===chemical);
+  document.querySelector('#old').value=cur?fmt(cur.rate):'0.00';
+  await renderRequests(meta.batch_id);
+}
+async function renderRequests(batchID){
+  const data=await request('/api/dosing/requests');
+  const list=(data.requests||[]).filter(r=>!batchID||r.batch_id===batchID);
+  const pending=list.filter(r=>r.status==='pending_approval');
+  document.querySelector('#pending').innerHTML=pending.length?pending.map(r=>`<div class="row"><span><strong>${r.chemical}</strong> · 批次 ${String(r.batch_id).slice(0,8)}<br><small class="muted">${fmt(r.old_rate)} → ${fmt(r.new_rate)} L/h（高风险）· ${r.requested_by} · ${r.reason||'无原因'}</small></span><span><button data-id="${r.id}" data-decision="approve">批准</button> <button class="danger" data-id="${r.id}" data-decision="reject">驳回</button></span></div>`).join(''):'<div class="muted">暂无待审核申请</div>';
+  document.querySelectorAll('#pending button').forEach(btn=>btn.onclick=()=>review(btn.dataset.id,btn.dataset.decision));
+  const rows=list.filter(r=>r.status!=='pending_approval').slice().reverse();
+  document.querySelector('#history').innerHTML=rows.map(r=>`<tr><td>${r.chemical}</td><td>${String(r.batch_id).slice(0,8)}</td><td>${fmt(r.old_rate)}</td><td>${fmt(r.new_rate)}</td><td>${r.high_risk?'高风险':'普通'}</td><td>${statusText[r.status]||r.status}</td><td>${r.requested_by}/${r.reviewed_by||'-'}</td><td>${r.status==='approved'?`<button class="danger" data-revoke="${r.id}">撤销</button>`:'-'}</td></tr>`).join('')||'<tr><td colspan="8" class="muted">暂无历史</td></tr>';
+  document.querySelectorAll('[data-revoke]').forEach(btn=>btn.onclick=()=>revoke(btn.dataset.revoke));
+}
+document.querySelector('[name=chemical]').addEventListener('change',loadLine);
+document.querySelector('#line').addEventListener('change',loadLine);
+document.querySelector('#submit').addEventListener('submit',async e=>{
+  e.preventDefault();const f=new FormData(e.target);
+  try{
+    const result=await request('/api/dosing',{method:'POST',body:JSON.stringify({line_id:f.get('line'),batch_id:f.get('batch'),chemical:f.get('chemical'),rate:Number(f.get('rate')),reason:f.get('reason'),requested_by:f.get('requester')})});
+    show(result.high_risk?{message:'高风险变更已提交，等待审核后才会下发设备总线',request:result.request}:{message:'普通范围内变更已直接下发设备总线',command:result.command});
+    await loadLine();
+  }catch(err){showError(err);}
+});
+async function review(id,decision){
+  const f=new FormData(document.querySelector('#review'));
+  try{show(await request(`/api/dosing/requests/${id}/review`,{method:'POST',body:JSON.stringify({decision,reviewer:f.get('reviewer'),review_note:f.get('note')})}));await loadLine();}
+  catch(err){showError(err);}
+}
+async function revoke(id){
+  if(!confirm('撤销该变更将向设备总线下发恢复旧值（或停机）的安全补偿命令，确认继续？'))return;
+  const f=new FormData(document.querySelector('#review'));
+  try{show(await request(`/api/dosing/requests/${id}/revoke`,{method:'POST',body:JSON.stringify({operator:f.get('reviewer'),revoke_note:'operator initiated safety revoke'})}));await loadLine();}
+  catch(err){showError(err);}
+}
+loadLines().catch(showError);
+</script></body></html>

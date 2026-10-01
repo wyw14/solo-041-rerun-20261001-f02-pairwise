@@ -63,6 +63,14 @@ func (p *Plant) ApplyRecovered(ctx context.Context, event model.Event) error {
 			return err
 		}
 	}
+	switch event.Kind {
+	case model.EventDosingChanged, model.EventDoseRequested, model.EventDoseReviewed,
+		model.EventDoseCanceled, model.EventDoseRevoked:
+		// 重放加药事件重建台账与审批簿；未批准的申请不会重放任何设备命令。
+		if err := p.dosing.ReplayEvent(ctx, event); err != nil {
+			return err
+		}
+	}
 	state.LastEventSeq = event.Sequence
 	state.UpdatedAt = event.OccurredAt
 	p.lines[event.LineID] = state

@@ -29,7 +29,7 @@ func (b *DeviceBus) Publish(ctx context.Context, command model.DeviceCommand) er
 	current, exists := b.commands[command.DeviceID]
 	if exists && command.Generation < current.Generation {
 		b.mu.Unlock()
-		return errors.New("device command generation is stale")
+		return model.ErrCommandStale
 	}
 	b.commands[command.DeviceID] = command
 	b.mu.Unlock()

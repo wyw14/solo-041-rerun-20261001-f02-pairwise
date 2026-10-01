@@ -131,7 +131,7 @@ func NewPlant(dataDir string, lines []model.LineID, now func() time.Time) (*Plan
 		return nil, err
 	}
 	devices := NewDeviceBus()
-	dosingService, err := dosing.NewService(store, devices, dosing.NewLedger())
+	dosingService, err := dosing.NewService(store, devices, dosing.NewLedger(), dosing.NewRequestBook(), dosing.DefaultRiskPolicy())
 	if err != nil {
 		return nil, err
 	}

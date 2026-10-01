@@ -16,6 +16,9 @@ const (
 	DeviceDoser  DeviceKind = "doser"
 )
 
+// ErrCommandStale 表示命令代际早于总线上当前命令（例如处理线已急停推进代际）。
+var ErrCommandStale = errors.New("device command generation is stale")
+
 type DeviceCommand struct {
 	ID         uuid.UUID         `json:"id"`
 	LineID     LineID            `json:"line_id"`

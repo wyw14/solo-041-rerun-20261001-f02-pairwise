@@ -21,6 +21,9 @@ type LineStatus struct {
 	Intake        *intake.Admission      `json:"intake,omitempty"`
 	Equalizers    []intake.Equalizer     `json:"equalizers"`
 	Dose          *dosing.Change         `json:"dose,omitempty"`
+	DoseCurrent   []dosing.Change        `json:"dose_current"`
+	DoseRequests  []dosing.ChangeRequest `json:"dose_requests"`
+	DoseHistory   []dosing.Change        `json:"dose_history"`
 	LabResult     *model.LabResult       `json:"lab_result,omitempty"`
 	Permit        *discharge.Permit      `json:"permit,omitempty"`
 	Cycle         *settling.Cycle        `json:"cycle,omitempty"`
@@ -44,6 +47,9 @@ func (p *Plant) Status(lineID model.LineID) (LineStatus, error) {
 	p.mu.RUnlock()
 	var batch *model.Batch
 	var dose *dosing.Change
+	var doseCurrent []dosing.Change
+	var doseRequests []dosing.ChangeRequest
+	var doseHistory []dosing.Change
 	var labResult *model.LabResult
 	var permit *discharge.Permit
 	if value, hasBatch := p.ActiveBatch(lineID); hasBatch {
@@ -51,6 +57,13 @@ func (p *Plant) Status(lineID model.LineID) (LineStatus, error) {
 		batch = &value
 		if doseValue, found := p.dosing.Latest(batchID); found {
 			dose = &doseValue
+		}
+		doseCurrent = p.dosing.Current(batchID)
+		doseHistory = p.dosing.History(batchID)
+		for _, request := range p.dosing.ListRequests("") {
+			if request.BatchID == batchID {
+				doseRequests = append(doseRequests, request)
+			}
 		}
 		if value.QualificationSample != uuid.Nil {
 			if resultValue, found := p.labResults.Get(value.QualificationSample); found {
@@ -85,7 +98,9 @@ func (p *Plant) Status(lineID model.LineID) (LineStatus, error) {
 		sequence = &value
 	}
 	return LineStatus{
-		Line: line, Batch: batch, Intake: admission, Equalizers: p.equalizers.Snapshot(), Dose: dose, LabResult: labResult, Permit: permit,
+		Line: line, Batch: batch, Intake: admission, Equalizers: p.equalizers.Snapshot(),
+		Dose: dose, DoseCurrent: doseCurrent, DoseRequests: doseRequests, DoseHistory: doseHistory,
+		LabResult: labResult, Permit: permit,
 		Cycle: cycle, Handover: handover, Sequence: sequence, Settling: settlingState.Snapshot(),
 		Samples: p.sampler.LineSnapshot(lineID), SampleCursor: p.receiver.Current(lineID),
 		Compensations: p.compensations.Pending(),
