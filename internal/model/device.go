@@ -7,6 +7,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrStaleCommand 表示设备命令的代际落后于总线当前命令（例如处理线已被急停隔离），
+// 该命令不得也不会下发。
+var ErrStaleCommand = errors.New("device command generation is stale")
+
 type DeviceKind string
 
 const (

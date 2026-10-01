@@ -3,6 +3,7 @@ package process
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/wyw14/cry-97/internal/journal"
@@ -54,7 +55,14 @@ func (p *Plant) FailSludgeSequence(lineID model.LineID) (sludge.Sequence, error)
 func (p *Plant) RunCompensations(ctx context.Context) (int, error) {
 	now := p.now()
 	return p.compensations.ExecuteDue(ctx, now, func(callCtx context.Context, item journal.Compensation) error {
-		return p.sequences.ExecuteCompensation(callCtx, item, now)
+		switch item.Action {
+		case "revert":
+			return p.dosing.ExecuteCompensation(callCtx, item)
+		case "stop":
+			return p.sequences.ExecuteCompensation(callCtx, item, now)
+		default:
+			return fmt.Errorf("unsupported compensation action %q", item.Action)
+		}
 	})
 }
 

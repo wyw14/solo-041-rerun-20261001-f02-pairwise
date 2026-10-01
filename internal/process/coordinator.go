@@ -135,6 +135,7 @@ func NewPlant(dataDir string, lines []model.LineID, now func() time.Time) (*Plan
 	if err != nil {
 		return nil, err
 	}
+	dosingService.WithCompensations(queue)
 	receiver, err := sensor.NewReceiver(store, cursor)
 	if err != nil {
 		return nil, err

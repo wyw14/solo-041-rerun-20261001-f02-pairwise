@@ -54,7 +54,15 @@ func (p *Plant) ApplyRecovered(ctx context.Context, event model.Event) error {
 		p.devices.StopLine(event.LineID, state.Generation)
 		return nil
 	}
-	if event.Kind == model.EventDeviceCommanded {
+	switch event.Kind {
+	case model.EventDosingChanged, model.EventDoseRequested,
+		model.EventDoseApproved, model.EventDoseRejected, model.EventDoseRevoked:
+		// dosing.changed 是确实下发过的命令，回放时重新进入设备总线并还原台账；
+		// pending/rejected 申请没有对应 changed 事件，因此永远不会进总线。
+		if err := p.dosing.Restore(ctx, event); err != nil {
+			return err
+		}
+	case model.EventDeviceCommanded:
 		var command model.DeviceCommand
 		if err := event.Decode(&command); err != nil {
 			return err

@@ -21,6 +21,8 @@ type LineStatus struct {
 	Intake        *intake.Admission      `json:"intake,omitempty"`
 	Equalizers    []intake.Equalizer     `json:"equalizers"`
 	Dose          *dosing.Change         `json:"dose,omitempty"`
+	DoseHistory   []dosing.Change        `json:"dose_history"`
+	DoseRequests  []dosing.Request       `json:"dose_requests"`
 	LabResult     *model.LabResult       `json:"lab_result,omitempty"`
 	Permit        *discharge.Permit      `json:"permit,omitempty"`
 	Cycle         *settling.Cycle        `json:"cycle,omitempty"`
@@ -44,6 +46,7 @@ func (p *Plant) Status(lineID model.LineID) (LineStatus, error) {
 	p.mu.RUnlock()
 	var batch *model.Batch
 	var dose *dosing.Change
+	var doseHistory []dosing.Change
 	var labResult *model.LabResult
 	var permit *discharge.Permit
 	if value, hasBatch := p.ActiveBatch(lineID); hasBatch {
@@ -52,6 +55,7 @@ func (p *Plant) Status(lineID model.LineID) (LineStatus, error) {
 		if doseValue, found := p.dosing.Latest(batchID); found {
 			dose = &doseValue
 		}
+		doseHistory = p.dosing.History(batchID)
 		if value.QualificationSample != uuid.Nil {
 			if resultValue, found := p.labResults.Get(value.QualificationSample); found {
 				labResult = &resultValue
@@ -85,8 +89,10 @@ func (p *Plant) Status(lineID model.LineID) (LineStatus, error) {
 		sequence = &value
 	}
 	return LineStatus{
-		Line: line, Batch: batch, Intake: admission, Equalizers: p.equalizers.Snapshot(), Dose: dose, LabResult: labResult, Permit: permit,
-		Cycle: cycle, Handover: handover, Sequence: sequence, Settling: settlingState.Snapshot(),
+		Line: line, Batch: batch, Intake: admission, Equalizers: p.equalizers.Snapshot(), Dose: dose,
+		DoseHistory: doseHistory, DoseRequests: p.dosing.PendingRequests(lineID), LabResult: labResult,
+		Permit: permit,
+		Cycle:  cycle, Handover: handover, Sequence: sequence, Settling: settlingState.Snapshot(),
 		Samples: p.sampler.LineSnapshot(lineID), SampleCursor: p.receiver.Current(lineID),
 		Compensations: p.compensations.Pending(),
 		Pumps:         filterPumps(p.pumps.Snapshot(), lineID), Blowers: p.aeration.Blowers(),
